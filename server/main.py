@@ -48,6 +48,28 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # permissive CSP — allows google fonts, inline styles (needed by vite), and
+    # unsafe-eval (needed by some vite chunks in dev-like builds).
+    # websockets need connect-src to include wss: for the ws endpoint.
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request as StarletteRequest
+
+    class CSPMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: StarletteRequest, call_next):
+            response = await call_next(request)
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "font-src 'self' https://fonts.gstatic.com; "
+                "img-src 'self' data: blob:; "
+                "connect-src 'self' ws: wss:; "
+                "frame-src 'self' http://localhost:*;"
+            )
+            return response
+
+    app.add_middleware(CSPMiddleware)
+
     from server.api.projects  import router as projects_router
     from server.api.planning  import router as planning_router
     from server.api.execution import router as execution_router
