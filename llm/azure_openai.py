@@ -1,13 +1,11 @@
-"""azure openai provider — handles both GPT-4.1 (full) and GPT-4.1-mini (mini) deployments.
+"""azure openai provider — calls the azure openai REST api for all planning agents.
 
 retry logic covers the three most common transient failures:
   - 429 rate limit: exponential backoff up to 90s
   - 400 content filter: retry with the same payload (filter trips are usually transient)
   - 5xx server errors: retry with backoff
 
-the provider builds endpoint URLs from three env vars so you only need to set
-AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_DEPLOYMENT_FULL (and optionally _MINI).
-if no mini deployment is configured the full deployment is used for both tiers.
+requires three env vars: AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT_FULL.
 """
 
 import asyncio
@@ -41,31 +39,22 @@ class AzureOpenAIProvider(LLMProvider):
         base = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip().rstrip("/")
         api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview").strip()
 
-        # separate deployment names for full (gpt-4.1) and mini (gpt-4.1-mini) tiers
-        deployment_full = os.getenv("AZURE_OPENAI_DEPLOYMENT_FULL", "gpt-4.1").strip()
-        # fall back to full deployment if no mini is configured
-        deployment_mini = (
-            os.getenv("AZURE_OPENAI_DEPLOYMENT_MINI", "").strip()
-            or deployment_full
-        )
+        deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT_FULL", "gpt-4.1").strip()
 
-        def _build_url(base_url: str, deployment: str, version: str) -> str:
+        def _build_url(base_url: str, dep: str, version: str) -> str:
             # if the base already contains a deployment path, just append the api-version
             if "chat/completions" in base_url:
                 return base_url
             if "/deployments/" in base_url:
                 return base_url if "?" in base_url else f"{base_url}?api-version={version}"
             # standard case: build from base endpoint + deployment name
-            return f"{base_url}/openai/deployments/{deployment}/chat/completions?api-version={version}"
+            return f"{base_url}/openai/deployments/{dep}/chat/completions?api-version={version}"
 
-        self.endpoint_full = _build_url(base, deployment_full, api_version)
-        self.endpoint_mini = _build_url(base, deployment_mini, api_version)
-
-        logger.info("azure endpoint (full): %s", self.endpoint_full)
-        logger.info("azure endpoint (mini): %s", self.endpoint_mini)
+        self.endpoint = _build_url(base, deployment, api_version)
+        logger.info("azure endpoint: %s", self.endpoint)
 
     def _get_endpoint(self, model: str) -> str:
-        return self.endpoint_mini if model == "mini" else self.endpoint_full
+        return self.endpoint
 
     async def call(self, system_prompt: str, user_prompt: str,
                    max_tokens: int = 4096, model: str = "full") -> LLMResponse:

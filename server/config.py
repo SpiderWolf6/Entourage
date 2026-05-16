@@ -11,7 +11,6 @@ class Settings(BaseSettings):
     # Azure OpenAI (planning pipeline)
     azure_openai_api_key: str = ""
     azure_openai_endpoint: str = ""
-    azure_openai_deployment: str = ""
     azure_openai_deployment_full: str = ""
     azure_openai_api_version: str = "2024-12-01-preview"
 

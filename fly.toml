@@ -10,7 +10,6 @@
 #     AZURE_OPENAI_API_KEY="..." \
 #     AZURE_OPENAI_ENDPOINT="https://..." \
 #     AZURE_OPENAI_DEPLOYMENT_FULL="gpt-4.1" \
-#     AZURE_OPENAI_DEPLOYMENT_MINI="gpt-4.1-mini" \
 #     ANTHROPIC_API_KEY="sk-ant-..." \
 #     ADMIN_PASSWORD="..."
 #
@@ -70,4 +69,5 @@ primary_region = "iad"   # us-east — pick closest to your users
     interval = "15s"
     timeout  = "10s"
     path     = "/api/health"
+    port     = 8000
     grace_period = "60s"   # give uvicorn + db init time on first boot

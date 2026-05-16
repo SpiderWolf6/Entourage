@@ -138,7 +138,7 @@ export default function App() {
   const [modal, setModal]           = useState<ModalTarget>(null)
   const [monitorOpen, setMonitorOpen] = useState(false)
   const [errorMsg, setErrorMsg]     = useState('')
-  const [creds, setCreds] = useState({ azureKey: '', azureEndpoint: '', azureDeployment: '', azureDeploymentFull: '', anthropicKey: '' })
+  const [creds, setCreds] = useState({ azureKey: '', azureEndpoint: '', azureDeploymentFull: '', anthropicKey: '' })
   const [totalCostUsd, setTotalCostUsd] = useState(0)
   const hrOutputRef = useRef<string>('')
 
@@ -375,7 +375,6 @@ export default function App() {
       await api.startPlanning(project.id, isAdmin ? { use_env_creds: true, admin_password: vals[0] } : {
         azure_openai_api_key: creds.azureKey,
         azure_openai_endpoint: creds.azureEndpoint,
-        azure_openai_deployment: creds.azureDeployment,
         azure_openai_deployment_full: creds.azureDeploymentFull,
         anthropic_api_key: creds.anthropicKey,
       })
@@ -2548,7 +2547,7 @@ function ClarificationModalPanel({ clarification, onAnswer, onClose }: {
 
 // ─── Landing ──────────────────────────────────────────────────────────────────
 
-type Creds = { azureKey: string; azureEndpoint: string; azureDeployment: string; azureDeploymentFull: string; anthropicKey: string }
+type Creds = { azureKey: string; azureEndpoint: string; azureDeploymentFull: string; anthropicKey: string }
 
 function LandingView({
   story, setStory, projectName, setProjectName, creds, setCreds, onSubmit, loading,
@@ -2608,7 +2607,7 @@ function LandingView({
 
           <div className="land-creds">
             <p className="land-creds-label">API credentials</p>
-            <p className="land-creds-hint">Enter your API keys below — or paste your admin password into all five fields to use saved credentials.</p>
+            <p className="land-creds-hint">Enter your API keys below — or paste your admin password into all four fields to use saved credentials.</p>
             <div className="land-creds-grid">
               <div className="land-cred-row">
                 <label>Azure OpenAI Key</label>
@@ -2619,12 +2618,8 @@ function LandingView({
                 <input type="text" placeholder="https://your-resource.openai.azure.com" value={creds.azureEndpoint} onChange={set('azureEndpoint')} autoComplete="off" />
               </div>
               <div className="land-cred-row">
-                <label>Azure Deployment (mini)</label>
-                <input type="text" placeholder="gpt-4o-mini" value={creds.azureDeployment} onChange={set('azureDeployment')} autoComplete="off" />
-              </div>
-              <div className="land-cred-row">
-                <label>Azure Deployment (full)</label>
-                <input type="text" placeholder="gpt-4o" value={creds.azureDeploymentFull} onChange={set('azureDeploymentFull')} autoComplete="off" />
+                <label>Azure Deployment</label>
+                <input type="text" placeholder="gpt-4.1" value={creds.azureDeploymentFull} onChange={set('azureDeploymentFull')} autoComplete="off" />
               </div>
               <div className="land-cred-row">
                 <label>Anthropic API Key</label>
