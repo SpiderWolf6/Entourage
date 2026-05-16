@@ -13,6 +13,6 @@ jobs:
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - run: flyctl deploy --remote-only --app spiderwolf-entourage
+      - run: flyctl deploy --remote-only --app spiderwolf6-entourage
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
