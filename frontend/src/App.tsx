@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { api } from './api/client'
 import { useWebSocket, type WSEvent } from './hooks/useWebSocket'
 import { useCanvasNav } from './hooks/useCanvasNav'
@@ -1363,8 +1363,6 @@ function MonitorSidebar({ events }: { events: WSEvent[] }) {
 
     for (const ev of events) {
       const agent = (ev.data?.agent as string) || ''
-      const spawnedName = (ev.data?.spawned_name as string) || ''
-
       // Track pipeline agents and dev agents by their `agent` field
       if (agent) {
         if (!stats[agent]) stats[agent] = { label: label(agent), cost: 0, turns: 0, files: 0, status: 'idle', lastThought: '' }
@@ -1797,7 +1795,7 @@ function TableConnections({ agentStates, activeAgent }: {
 // ─── Agent Faces ─────────────────────────────────────────────────────────────
 
 function AgentFace({ agent }: { agent: PipelineAgent }) {
-  const faces: Record<PipelineAgent, JSX.Element> = {
+  const faces: Record<PipelineAgent, React.ReactElement> = {
     engineering_manager: (
       <svg viewBox="0 0 56 56" fill="none" className="wr-face-svg">
         <circle cx="28" cy="28" r="10" stroke="rgba(255,255,255,0.12)" strokeWidth="1.5" fill="none"/>
@@ -1864,7 +1862,7 @@ function AgentFace({ agent }: { agent: PipelineAgent }) {
 }
 
 function SpawnedFace({ archetype }: { archetype: string }) {
-  const faces: Record<string, JSX.Element> = {
+  const faces: Record<string, React.ReactElement> = {
     backend_dev: (<>
       <rect x="12" y="14" width="22" height="4" rx="1" stroke="rgba(255,255,255,0.09)" strokeWidth="1" fill="none"/>
       <rect x="12" y="20" width="22" height="4" rx="1" stroke="rgba(255,255,255,0.09)" strokeWidth="1" fill="none"/>
@@ -2034,63 +2032,6 @@ function AgentModal({ modal, agentStates, onAnswer, onClose }: {
 }
 
 // ─── Artifact renderer ────────────────────────────────────────────────────────
-
-function renderArtifact(text: string): JSX.Element {
-  const lines = text.split('\n')
-  const nodes: JSX.Element[] = []
-  let listItems: string[] = []
-  let codeBlock: string[] = []
-  let codeLanguage = ''
-  let inCode = false
-  let keyIdx = 0
-
-  const flushList = () => {
-    if (listItems.length === 0) return
-    nodes.push(
-      <ul key={keyIdx++} className="artifact-list">
-        {listItems.map((item, i) => <li key={i}>{item}</li>)}
-      </ul>
-    )
-    listItems = []
-  }
-  const flushCode = () => {
-    if (codeBlock.length === 0) return
-    nodes.push(
-      <pre key={keyIdx++} className="artifact-code">
-        <div className="artifact-code-lang">{codeLanguage || 'code'}</div>
-        <code>{codeBlock.join('\n')}</code>
-      </pre>
-    )
-    codeBlock = []; codeLanguage = ''
-  }
-
-  for (const line of lines) {
-    if (line.startsWith('```')) {
-      if (inCode) { flushCode(); inCode = false }
-      else { flushList(); codeLanguage = line.slice(3).trim(); inCode = true }
-      continue
-    }
-    if (inCode) { codeBlock.push(line); continue }
-
-    const hMatch = line.match(/^(#{1,3})\s+(.+)/)
-    if (hMatch) {
-      flushList()
-      const level = hMatch[1].length
-      nodes.push(<div key={keyIdx++} className={`artifact-h${level}`}>{hMatch[2]}</div>)
-      continue
-    }
-    const bulletMatch = line.match(/^[-*•]\s+(.+)/)
-    if (bulletMatch) { listItems.push(bulletMatch[1]); continue }
-    const numMatch = line.match(/^\d+\.\s+(.+)/)
-    if (numMatch) { listItems.push(numMatch[1]); continue }
-
-    flushList()
-    if (line.trim()) nodes.push(<p key={keyIdx++} className="artifact-para">{line}</p>)
-    else nodes.push(<div key={keyIdx++} className="artifact-spacer" />)
-  }
-  flushList(); flushCode()
-  return <>{nodes}</>
-}
 
 // ─── Thinking word rotator ────────────────────────────────────────────────────
 
