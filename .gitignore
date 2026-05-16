@@ -1,0 +1,44 @@
+# secrets — never commit
+.env
+.env.local
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# database — regenerates on startup
+*.db
+*.sqlite
+*.sqlite3
+
+# generated project sandboxes — can be many GB
+workspaces/
+
+# logs directory
+logs/
+
+# node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# os
+.DS_Store
+Thumbs.db
+
+# ide
+.vscode/
+.idea/
+*.swp
+
+# crash dumps
+*.stackdump
+
+# claude
+.claude/

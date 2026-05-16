@@ -1,0 +1,73 @@
+# fly.io deployment configuration for entourage
+#
+# setup (one time):
+#   flyctl auth login
+#   flyctl launch                                      # creates the app, picks a region
+#   flyctl volumes create entourage_data --size 5      # 5 GB for sqlite + workspaces
+#
+# set secrets:
+#   flyctl secrets set \
+#     AZURE_OPENAI_API_KEY="..." \
+#     AZURE_OPENAI_ENDPOINT="https://..." \
+#     AZURE_OPENAI_DEPLOYMENT_FULL="gpt-4.1" \
+#     AZURE_OPENAI_DEPLOYMENT_MINI="gpt-4.1-mini" \
+#     ANTHROPIC_API_KEY="sk-ant-..." \
+#     ADMIN_PASSWORD="..."
+#
+# deploy:
+#   flyctl deploy
+
+app = "entourage"        # change this to your fly app name after `flyctl launch`
+primary_region = "iad"   # us-east — pick closest to your users
+
+[build]
+  # fly builds from the Dockerfile in the repo root
+  dockerfile = "Dockerfile"
+
+[env]
+  # non-secret runtime config — secrets are set via `flyctl secrets set`
+  DATABASE_URL  = "sqlite+aiosqlite:////data/entourage.db"
+  WORKSPACE_DIR = "/data/workspaces"
+  PORT          = "8000"
+
+[[services]]
+  protocol    = "tcp"
+  internal_port = 8000
+
+  # fly handles tls termination — the app only needs to speak http internally
+  [[services.ports]]
+    port     = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port     = 443
+    handlers = ["tls", "http"]
+
+  # websocket connections can be long-lived — set a generous idle timeout
+  [services.http_checks]
+    interval = "10s"
+    timeout  = "5s"
+    grace_period = "30s"
+    method   = "GET"
+    path     = "/api/health"
+
+  # keep one machine always running — agent runs are long (10–30 min) and
+  # can't survive a cold start in the middle of a sprint
+  [services.concurrency]
+    type       = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+[[mounts]]
+  # persistent volume — sqlite db and generated workspaces survive deploys
+  # create with: flyctl volumes create entourage_data --size 5
+  source      = "entourage_data"
+  destination = "/data"
+
+[checks]
+  [checks.alive]
+    type     = "http"
+    interval = "15s"
+    timeout  = "10s"
+    path     = "/api/health"
+    grace_period = "60s"   # give uvicorn + db init time on first boot

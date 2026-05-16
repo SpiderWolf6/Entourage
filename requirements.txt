@@ -1,0 +1,14 @@
+# Core
+httpx
+python-dotenv
+
+# FastAPI server
+fastapi
+uvicorn[standard]
+pydantic-settings
+websockets
+
+# Database
+sqlalchemy[asyncio]
+aiosqlite
+
