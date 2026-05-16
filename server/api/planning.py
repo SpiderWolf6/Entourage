@@ -211,6 +211,7 @@ def _apply_credentials(creds: dict) -> "callable":
         "azure_openai_api_key":        "AZURE_OPENAI_API_KEY",
         "azure_openai_endpoint":       "AZURE_OPENAI_ENDPOINT",
         "azure_openai_deployment_full":"AZURE_OPENAI_DEPLOYMENT_FULL",
+        "azure_openai_api_version":    "AZURE_OPENAI_API_VERSION",
         "anthropic_api_key":           "ANTHROPIC_API_KEY",
     }
 

@@ -37,9 +37,8 @@ class AzureOpenAIProvider(LLMProvider):
     def __init__(self):
         self.api_key = os.getenv("AZURE_OPENAI_API_KEY", "").strip()
         base = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip().rstrip("/")
-        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview").strip()
-
-        deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT_FULL", "gpt-4.1").strip()
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "").strip()
+        deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT_FULL", "").strip()
 
         def _build_url(base_url: str, dep: str, version: str) -> str:
             # if the base already contains a deployment path, just append the api-version

@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     azure_openai_api_key: str = ""
     azure_openai_endpoint: str = ""
     azure_openai_deployment_full: str = ""
-    azure_openai_api_version: str = "2024-12-01-preview"
+    azure_openai_api_version: str = ""
 
     # Anthropic (Claude Code CLI — used by dev agents and reviewer)
     anthropic_api_key: str = ""
