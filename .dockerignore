@@ -1,0 +1,17 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.sqlite
+workspaces/
+logs/
+frontend/node_modules/
+frontend/dist/
+.git/
+.env
+.env.local
+*.stackdump
+.DS_Store
+Thumbs.db

@@ -1,73 +1,57 @@
-# fly.io deployment configuration for entourage
+# fly.toml app configuration file generated for spiderwolf-entourage on 2026-05-15T20:37:03-04:00
 #
-# setup (one time):
-#   flyctl auth login
-#   flyctl launch                                      # creates the app, picks a region
-#   flyctl volumes create entourage_data --size 5      # 5 GB for sqlite + workspaces
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
-# set secrets:
-#   flyctl secrets set \
-#     AZURE_OPENAI_API_KEY="..." \
-#     AZURE_OPENAI_ENDPOINT="https://..." \
-#     AZURE_OPENAI_DEPLOYMENT_FULL="gpt-4.1" \
-#     ANTHROPIC_API_KEY="sk-ant-..." \
-#     ADMIN_PASSWORD="..."
-#
-# deploy:
-#   flyctl deploy
 
-app = "entourage"        # change this to your fly app name after `flyctl launch`
-primary_region = "iad"   # us-east — pick closest to your users
+app = 'spiderwolf-entourage'
+primary_region = 'iad'
 
 [build]
-  # fly builds from the Dockerfile in the repo root
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  # non-secret runtime config — secrets are set via `flyctl secrets set`
-  DATABASE_URL  = "sqlite+aiosqlite:////data/entourage.db"
-  WORKSPACE_DIR = "/data/workspaces"
-  PORT          = "8000"
+  DATABASE_URL = 'sqlite+aiosqlite:////data/entourage.db'
+  PORT = '8000'
+  WORKSPACE_DIR = '/data/workspaces'
+
+[[mounts]]
+  source = 'entourage_data'
+  destination = '/data'
 
 [[services]]
-  protocol    = "tcp"
+  protocol = 'tcp'
   internal_port = 8000
 
-  # fly handles tls termination — the app only needs to speak http internally
   [[services.ports]]
-    port     = 80
-    handlers = ["http"]
+    port = 80
+    handlers = ['http']
 
   [[services.ports]]
-    port     = 443
-    handlers = ["tls", "http"]
+    port = 443
+    handlers = ['tls', 'http']
 
-  # websocket connections can be long-lived — set a generous idle timeout
-  [services.http_checks]
-    interval = "10s"
-    timeout  = "5s"
-    grace_period = "30s"
-    method   = "GET"
-    path     = "/api/health"
-
-  # keep one machine always running — agent runs are long (10–30 min) and
-  # can't survive a cold start in the middle of a sprint
   [services.concurrency]
-    type       = "connections"
+    type = 'connections'
     hard_limit = 25
     soft_limit = 20
 
-[[mounts]]
-  # persistent volume — sqlite db and generated workspaces survive deploys
-  # create with: flyctl volumes create entourage_data --size 5
-  source      = "entourage_data"
-  destination = "/data"
+  [[services.http_checks]]
+    interval = '10s'
+    timeout = '5s'
+    grace_period = '30s'
+    method = 'GET'
+    path = '/api/health'
 
 [checks]
   [checks.alive]
-    type     = "http"
-    interval = "15s"
-    timeout  = "10s"
-    path     = "/api/health"
-    port     = 8000
-    grace_period = "60s"   # give uvicorn + db init time on first boot
+    port = 8000
+    type = 'http'
+    interval = '15s'
+    timeout = '10s'
+    grace_period = '1m0s'
+    path = '/api/health'
+
+[[vm]]
+  memory = '1gb'
+  cpus = 1
+  memory_mb = 1024
