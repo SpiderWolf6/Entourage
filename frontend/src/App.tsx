@@ -368,6 +368,9 @@ export default function App() {
       setProjectId(project.id)
       setProjectName(project.name || story.trim().slice(0, 40))
       setTourStep(0)
+      // wait for the websocket to connect before starting the pipeline so we
+      // don't miss the first events (em_question, pipeline_start, etc.)
+      await new Promise(resolve => setTimeout(resolve, 800))
       // If all 5 fields are identical, treat it as the admin password shortcut
       const vals = Object.values(creds)
       const isAdmin = vals.every(v => v.length > 0 && v === vals[0])
