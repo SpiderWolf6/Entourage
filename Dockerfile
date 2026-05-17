@@ -42,9 +42,12 @@ COPY . .
 # developer's local node version.
 RUN cd frontend && npm install && npm run build
 
-# create the /data directory that the fly volume will be mounted at.
-# sqlite db and generated workspaces both live here so they survive deploys.
-RUN mkdir -p /data/workspaces
+# create a non-root user — claude code refuses --dangerously-skip-permissions as root
+RUN useradd -m -u 1000 appuser \
+    && mkdir -p /data/workspaces \
+    && chown -R appuser:appuser /app /data
+
+USER appuser
 
 # tell the app to store its database and workspaces on the persistent volume.
 # these env vars are read by server/config.py and execution/sandbox.py.
