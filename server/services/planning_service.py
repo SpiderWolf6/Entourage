@@ -26,6 +26,9 @@ from orchestrator.planning_pipeline import (
 async def run_planning(project_id: str, user_story: str,
                        config: dict | None = None) -> PlanningResult:
     """Run the planning pipeline with DB + EventBus integration."""
+    import logging
+    log = logging.getLogger(__name__)
+    log.info("run_planning started for project %s", project_id)
 
     # Update project status to running
     async with async_session() as db:

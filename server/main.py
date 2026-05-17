@@ -11,6 +11,12 @@ no separate node server needed on fly.io.
 
 import sys
 import asyncio
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 # must be before any asyncio.get_event_loop() calls — uvicorn may set its own policy
 # later on linux, but on linux subprocess works with either loop so it's fine to set here
