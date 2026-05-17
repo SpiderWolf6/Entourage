@@ -93,6 +93,10 @@ def create_app() -> FastAPI:
             if full_path.startswith("api/") or full_path.startswith("ws/"):
                 from fastapi import HTTPException
                 raise HTTPException(status_code=404)
+            # serve static files from dist root (icons, favicon, etc.) if they exist
+            static_file = dist_dir / full_path
+            if full_path and static_file.exists() and static_file.is_file():
+                return FileResponse(str(static_file))
             index = dist_dir / "index.html"
             return FileResponse(str(index), headers={"Content-Security-Policy": CSP})
 
