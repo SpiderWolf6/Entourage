@@ -189,11 +189,10 @@ export default function App() {
       setProjectName(project.name || '')
       setStory(project.user_story || '')
       const s = project.status
-      if (s === 'running') setAppState('running')
-      else if (s === 'completed' || s === 'mvp_ready') setAppState('done')
+      if (s === 'completed' || s === 'mvp_ready') setAppState('done')
       else if (s === 'executing') { setAppState('done'); setExecRunning(true); setExecPanel(true) }
       else if (s === 'failed' || s === 'execution_failed') setAppState('error')
-      else setAppState('running')
+      else setAppState('running') // running, created, or unknown — show war room and let WS catch up
     }).catch(() => {
       // Project not found — clear stale URL param and show landing
       window.history.replaceState(null, '', '/')
@@ -379,6 +378,9 @@ export default function App() {
         azure_openai_api_version: creds.azureApiVersion,
         anthropic_api_key: creds.anthropicKey,
       })
+      // transition immediately — don't wait for pipeline_start event which may arrive
+      // before the websocket subscription is open and get lost
+      setAppState('running')
     } catch (e) { setErrorMsg(String(e)); setAppState('error') }
   }, [story, projectName, appState, creds])
 
