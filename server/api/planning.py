@@ -163,8 +163,14 @@ async def _run_planning_safe(project_id: str, user_story: str,
     """Run the planning pipeline with error handling."""
     import logging
     log = logging.getLogger(__name__)
+    log.info("_run_planning_safe started for project %s", project_id)
     config = config or {}
-    _restore = _apply_credentials(config.get("credentials", {}))
+    try:
+        _restore = _apply_credentials(config.get("credentials", {}))
+    except Exception as e:
+        log.error("Credential error for project %s: %s", project_id, e, exc_info=True)
+        return
+    log.info("Credentials applied, starting pipeline for project %s", project_id)
     try:
         await run_planning(project_id, user_story, config)
     except Exception as e:
