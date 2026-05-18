@@ -20,6 +20,7 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
+    gosu \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -47,13 +48,14 @@ RUN useradd -m -u 1000 appuser \
     && mkdir -p /data/workspaces \
     && chown -R appuser:appuser /app /data
 
-USER appuser
-
 # tell the app to store its database and workspaces on the persistent volume.
 # these env vars are read by server/config.py and execution/sandbox.py.
 ENV DATABASE_URL=sqlite+aiosqlite:////data/entourage.db
 ENV WORKSPACE_DIR=/data/workspaces
 
-# single worker is required — the event bus and demo registry are in-process singletons.
-# multiple workers would have separate instances and events would be lost across workers.
-CMD ["uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# entrypoint runs as root to fix /data permissions on every boot, then
+# drops to appuser via su-exec before starting uvicorn
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+CMD ["/entrypoint.sh"]
