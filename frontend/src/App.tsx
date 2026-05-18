@@ -1685,9 +1685,10 @@ function ExecPanel({
             }
             else return null
             if (!text) return null
-            // Deduplicate: skip if exact same message already shown
-            if (seenTexts.has(text)) return null
-            seenTexts.add(text)
+            // Deduplicate: include event index so per-sprint messages aren't suppressed
+            const dedupeKey = `${i}:${text}`
+            if (seenTexts.has(dedupeKey)) return null
+            seenTexts.add(dedupeKey)
             return (
               <div key={i} className={`exec-log-line ${cls}`}>
                 {text}

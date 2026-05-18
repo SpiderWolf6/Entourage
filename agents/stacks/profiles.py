@@ -88,7 +88,7 @@ _FLASK_REACT = StackProfile(
     ),
     workspace_setup="flask_react",
     setup_steps=("python_venv", "npm_frontend"),
-    launch_commands=(("backend", "python api/run.py"), ("frontend", "npm run dev")),
+    launch_commands=(("backend", "python api/run.py"), ("frontend", "npm run dev -- --host")),
     default_agents=("python_dev", "react_dev"),
 )
 

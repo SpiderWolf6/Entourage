@@ -516,7 +516,7 @@ def _generic_launch_commands(workspace_dir: Path) -> list[tuple[str, str]]:
             data = json.loads(pkg.read_text())
             scripts = data.get("scripts", {})
             if "dev" in scripts:
-                commands.append(("frontend", f"{npm} run dev"))
+                commands.append(("frontend", f"{npm} run dev -- --host"))
             elif "start" in scripts:
                 commands.append(("frontend", f"{npm} start"))
         except Exception:
