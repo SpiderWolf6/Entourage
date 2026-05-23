@@ -1,9 +1,10 @@
 """Execution API — start/stop sprint execution, PL review gates, demo management."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
 
 from server.database import get_session
 from server.models.project import Project
@@ -38,19 +39,16 @@ class SprintRejectionRequest(BaseModel):
 async def start_project_execution(
     project_id: str,
     db: AsyncSession = Depends(get_session),
+    x_user_id: Optional[str] = Header(None),
 ):
-    """Start sprint-by-sprint code execution for a project.
-
-    Requires the planning pipeline to be completed first.
-    Spawns claude coders for each sprint in the background.
-    """
+    """Start sprint-by-sprint code execution for a project."""
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
     try:
-        resp = await start_execution(project_id)
+        resp = await start_execution(project_id, user_id=x_user_id)
         return resp
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

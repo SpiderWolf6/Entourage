@@ -17,7 +17,7 @@ from server.services.event_bus import event_bus
 router = APIRouter()
 log = logging.getLogger(__name__)
 
-WORKSPACES_DIR = Path(__file__).resolve().parent.parent.parent / "workspaces"
+WORKSPACES_DIR = Path(os.environ.get("WORKSPACE_DIR", str(Path(__file__).resolve().parent.parent.parent / "workspaces")))
 
 
 @router.websocket("/ws/{project_id}")

@@ -18,7 +18,7 @@ class ProductOwnerAgent(BaseAgent):
     skills = ["requirements", "user-stories", "acceptance-criteria", "design-vision"]
 
     def _model_tier(self) -> str:
-        return "mini"  # PO refines text, no code generation needed
+        return "full"
 
     def build_prompt(self, task: dict[str, Any], context: str) -> str:
         """PO receives the raw user story as the task description."""

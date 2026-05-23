@@ -24,12 +24,20 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-# Fixed ports for demo services — always the same, cleared before each launch
-DEMO_BACKEND_PORT = 9000
-DEMO_FRONTEND_PORT = 9001
-
 # Max seconds to wait for a service to become available on its port
 SERVICE_READY_TIMEOUT = 60
+
+# Demo idle timeout — kill demo after 30 minutes of no activity
+DEMO_IDLE_TIMEOUT_SECS = 30 * 60
+
+
+def _get_free_port() -> int:
+    """Ask the OS for a free TCP port by binding to port 0."""
+    import socket as _socket
+    with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
 
 
 @dataclass
@@ -76,6 +84,21 @@ class DemoLauncher:
         self._services: list[ServiceInfo] = []
         self._running = False
         self._monitor_task: asyncio.Task | None = None
+        self._last_activity = asyncio.get_event_loop().time() if asyncio.get_event_loop().is_running() else 0.0
+
+    def touch(self) -> None:
+        """Record activity — resets idle timer."""
+        try:
+            self._last_activity = asyncio.get_event_loop().time()
+        except Exception:
+            pass
+
+    def idle_seconds(self) -> float:
+        """Return seconds since last activity."""
+        try:
+            return asyncio.get_event_loop().time() - self._last_activity
+        except Exception:
+            return 0.0
 
     # ── Public API ─────────────────────────────────────────────────────
 
@@ -92,24 +115,15 @@ class DemoLauncher:
                 error=f"No launch commands defined for stack '{self.stack}'",
             )
 
-        # Kill whatever is on the two fixed demo ports before starting fresh.
-        _kill_port(DEMO_BACKEND_PORT)
-        _kill_port(DEMO_FRONTEND_PORT)
-        # On Windows, taskkill is asynchronous — wait until ports are actually free
-        await _wait_ports_free([DEMO_BACKEND_PORT, DEMO_FRONTEND_PORT], timeout=10.0)
-
         await _emit(on_event, "demo_starting", {
             "stack": self.stack,
             "services": [name for name, _ in launch_commands],
         })
 
-        # Agents hardcode 9000 (backend) and 9001 (frontend) — just launch as-is.
-        PORT_MAP = {"backend": DEMO_BACKEND_PORT, "api": DEMO_BACKEND_PORT,
-                    "app": DEMO_BACKEND_PORT, "frontend": DEMO_FRONTEND_PORT}
-
+        # assign OS-free ports for each service
         self._services = []
         for name, cmd in launch_commands:
-            port = PORT_MAP.get(name, DEMO_BACKEND_PORT)
+            port = _get_free_port()
             service = ServiceInfo(
                 name=name,
                 command=cmd,
@@ -117,6 +131,15 @@ class DemoLauncher:
                 url=f"http://localhost:{port}",
             )
             self._services.append(service)
+
+        self.touch()
+
+        # Patch vite.config.js with the correct base path before starting Vite.
+        # Vite bakes the base into all asset URLs — without this every JS module
+        # request goes to /src/... which hits the entourage SPA catch-all instead
+        # of being routed through /demo/<project_id>/.
+        _patch_vite_base(self.workspace_dir, self.project_id)
+        _patch_package_json(self.workspace_dir)
 
         # Start each service
         for service in self._services:
@@ -174,8 +197,12 @@ class DemoLauncher:
         Uses subprocess.Popen (thread-based) instead of asyncio.create_subprocess_exec
         because uvicorn may have replaced the ProactorEventLoop with SelectorEventLoop
         on Windows, which causes NotImplementedError from asyncio subprocess APIs.
+
+        The port is injected into the command so each demo gets an OS-assigned free port.
         """
-        cmd_parts = _split_command(service.command)
+        # inject the OS-assigned port into the command
+        cmd_with_port = _inject_port(service.command, service.port)
+        cmd_parts = _split_command(cmd_with_port)
         resolved_cmd = _resolve_executable(cmd_parts, self.venv_dir)
 
         # Determine the correct working directory for this service.
@@ -186,7 +213,9 @@ class DemoLauncher:
         print(f"\n[DEMO] Starting {service.name}: {' '.join(resolved_cmd)}", flush=True)
         print(f"[DEMO]   cwd={cwd}  port={service.port}  cwd_exists={cwd.exists()}", flush=True)
 
-        env = _build_demo_env(self.workspace_dir, self.venv_dir, service.port)
+        # find backend port to pass to frontend so Vite proxy knows where Flask is
+        backend_port = next((s.port for s in self._services if s.name in ("backend", "api", "app")), None)
+        env = _build_demo_env(self.workspace_dir, self.venv_dir, service.port, getattr(self, 'creds', None), backend_port=backend_port)
 
         loop = asyncio.get_event_loop()
         # Run Popen in a thread so we don't block the event loop, but avoid
@@ -446,6 +475,23 @@ def _port_open(host: str, port: int) -> bool:
         return False
 
 
+def _inject_port(command: str, port: int) -> str:
+    """Replace or inject port into a launch command.
+
+    - Strips any existing --port N then appends the OS-assigned port.
+    - For Python/Flask: port is injected via PORT env var in _build_demo_env,
+      no flag needed in the command itself.
+    """
+    import re
+    # strip any existing --port flags to avoid duplicates (e.g. vite --port 9001)
+    command = re.sub(r'--port\s+\d+', '', command).strip()
+    # for vite/npm dev, append --port
+    if "npm run dev" in command or "npm run start" in command or "vite" in command:
+        return f"{command} --port {port}"
+    # for python flask, port comes from PORT env var — no flag needed
+    return command
+
+
 def _split_command(command: str) -> list[str]:
     """Split a command string into parts, respecting quoted strings."""
     import shlex
@@ -478,7 +524,7 @@ def _resolve_executable(cmd_parts: list[str], venv_dir: Path) -> list[str]:
     return result
 
 
-def _build_demo_env(workspace_dir: Path, venv_dir: Path, port: int) -> dict[str, str]:
+def _build_demo_env(workspace_dir: Path, venv_dir: Path, port: int, creds=None, backend_port: int | None = None) -> dict[str, str]:
     """Build environment variables for a demo service."""
     env = os.environ.copy()
 
@@ -491,6 +537,11 @@ def _build_demo_env(workspace_dir: Path, venv_dir: Path, port: int) -> dict[str,
 
     env["FLASK_DEBUG"] = "0"
     env["FLASK_ENV"] = "production"
+    env["PORT"] = str(port)
+    env["FLASK_RUN_PORT"] = str(port)
+    # pass backend port so Vite proxy config can forward /api correctly
+    if backend_port:
+        env["BACKEND_PORT"] = str(backend_port)
     # Always include workspace root so `api`, `app`, etc. resolve as packages
     env["PYTHONPATH"] = str(workspace_dir) + os.pathsep + env.get("PYTHONPATH", "")
 
@@ -536,6 +587,84 @@ def _service_cwd(workspace_dir: Path, service_name: str, stack: str) -> Path:
         if fe_dir.exists():
             return fe_dir
     return workspace_dir
+
+
+def _patch_package_json(workspace_dir: Path) -> None:
+    """Strip hardcoded --port flags from the npm dev script.
+
+    Agents often write `vite --port 9001` in package.json. When _inject_port
+    appends the OS-assigned port, Vite ends up with two --port flags. Vite uses
+    the last one so it works, but the log is noisy. Strip it here so there's
+    only ever one --port (the OS-assigned one added by _inject_port).
+    """
+    pkg_path = workspace_dir / "frontend" / "package.json"
+    if not pkg_path.exists():
+        return
+    try:
+        import json as _json, re
+        pkg = _json.loads(pkg_path.read_text(encoding="utf-8"))
+        scripts = pkg.get("scripts", {})
+        changed = False
+        for key in ("dev", "start"):
+            if key in scripts:
+                cleaned = re.sub(r'--port\s+\d+', '', scripts[key]).strip()
+                if cleaned != scripts[key]:
+                    scripts[key] = cleaned
+                    changed = True
+        if changed:
+            pkg_path.write_text(_json.dumps(pkg, indent=2), encoding="utf-8")
+            log.info("Stripped hardcoded --port from package.json dev script")
+    except Exception as e:
+        log.warning("Failed to patch package.json: %s", e)
+
+
+def _patch_vite_base(workspace_dir: Path, project_id: str) -> None:
+    """Rewrite vite.config.js so Vite prefixes all asset URLs with /demo/<project_id>/.
+
+    Without this the browser requests /src/App.jsx which hits the entourage SPA
+    catch-all instead of being routed through the demo proxy. Also strips any
+    hardcoded port/strictPort so OS-assigned ports work, and makes the /api proxy
+    dynamic via BACKEND_PORT env var.
+    """
+    vite_config = workspace_dir / "frontend" / "vite.config.js"
+    if not vite_config.exists():
+        return
+    try:
+        import re
+        text = vite_config.read_text(encoding="utf-8")
+
+        # Remove stale hardcoded port/strictPort lines
+        text = re.sub(r'[ \t]*port\s*:\s*\d+\s*,?\n', '', text)
+        text = re.sub(r'[ \t]*strictPort\s*:\s*(true|false)\s*,?\n', '', text)
+
+        # Replace hardcoded /api proxy target with dynamic BACKEND_PORT
+        text = re.sub(
+            r"""(['"/])/api\1\s*:\s*['"]http://localhost:\d+['"]""",
+            r"'/api': `http://localhost:${process.env.BACKEND_PORT || 9000}`",
+            text,
+        )
+
+        # Remove any existing base: line to avoid duplicates
+        text = re.sub(r'[ \t]*base\s*:\s*["\'][^"\']*["\']\s*,?\n', '', text)
+
+        # Inject base after 'export default defineConfig({'
+        base_line = f'  base: "/demo/{project_id}/",\n'
+        text = re.sub(
+            r'(export\s+default\s+defineConfig\s*\(\s*\{)',
+            r'\1\n' + base_line.rstrip('\n'),
+            text,
+        )
+
+        vite_config.write_text(text, encoding="utf-8")
+        # Make read-only so Vite's HMR watcher doesn't detect a change on first
+        # start and restart (which would lose our injected --port flag).
+        try:
+            vite_config.chmod(0o444)
+        except Exception:
+            pass
+        log.info("Patched vite.config.js: base=/demo/%s/ + dynamic ports", project_id)
+    except Exception as e:
+        log.warning("Failed to patch vite.config.js: %s", e)
 
 
 async def _emit(cb, event_type: str, data: dict) -> None:

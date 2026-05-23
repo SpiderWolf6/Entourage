@@ -27,7 +27,10 @@ from orchestrator.clarification_bus import clarification_bus
 log = logging.getLogger(__name__)
 
 # rough cost estimate used only for the pipeline_done total — per-agent costs come from the llm client
-COST_PER_TOKEN = 0.000002
+# gpt-4.1: $2/1M input, $8/1M output — used only for pipeline_done total estimate
+# individual agent costs come from LLMResponse.cost_usd() which uses the same rates
+GPT41_INPUT_PER_TOKEN  = 2.00 / 1_000_000
+GPT41_OUTPUT_PER_TOKEN = 8.00 / 1_000_000
 
 PLANNING_PHASES = ["engineering_manager", "product_owner", "architect", "project_lead", "hr"]
 
@@ -119,12 +122,15 @@ async def run_planning_pipeline(
     user_story: str,
     callbacks: PlanningCallbacks | None = None,
     config: dict[str, Any] | None = None,
+    creds: "Any | None" = None,  # server.credentials.Credentials
 ) -> PlanningResult:
     """run the full planning pipeline and return artifacts + cost.
 
     config keys:
       stack_preference: str       override stack detection (default "auto")
       budgets: {agent: max_tokens}  0 = unlimited per agent
+
+    creds: Credentials dataclass passed through to LLM calls — never reads os.environ.
     """
     discover_agents()
     cb = callbacks or PlanningCallbacks()
@@ -138,6 +144,8 @@ async def run_planning_pipeline(
         user_story=user_story,
         stack=config.get("stack_preference", "auto"),
     )
+    # store creds on state so phase runners can pass them to LLM calls
+    state.creds = creds
 
     await _emit(cb, PlanningEvent(
         type="pipeline_start",
@@ -163,7 +171,11 @@ async def run_planning_pipeline(
 
     # rough total — per-agent costs are tracked separately by the llm client
     total_tokens = sum(_count_tokens(v) for v in result.artifacts.values())
-    result.total_cost = total_tokens * COST_PER_TOKEN
+    # rough total — assumes average 25% output ratio since we don't split input/output here
+    result.total_cost = sum(
+        _count_tokens(v) * (GPT41_INPUT_PER_TOKEN * 0.75 + GPT41_OUTPUT_PER_TOKEN * 0.25)
+        for v in result.artifacts.values()
+    )
     result.token_usage = {k: _count_tokens(v) for k, v in result.artifacts.items()}
 
     await _emit(cb, PlanningEvent(
@@ -217,7 +229,7 @@ async def _run_em(
         prompt_parts.append(f"=== Latest message ===\n{current_input}")
         prompt = "\n\n".join(prompt_parts)
 
-        resp = await async_call_llm_tracked(system_prompt, prompt, max_tokens=512, model="mini")
+        resp = await async_call_llm_tracked(system_prompt, prompt, max_tokens=512, model="full", creds=getattr(state, 'creds', None))
         output = resp.text.strip()
         total_input_tokens += resp.input_tokens
         total_output_tokens += resp.output_tokens
@@ -229,7 +241,7 @@ async def _run_em(
         if "BRIEF_READY:" in output:
             # em is satisfied — extract and store the brief
             brief = output.split("BRIEF_READY:", 1)[1].strip()
-            cost = total_input_tokens * 0.000002 + total_output_tokens * 0.000008
+            cost = total_input_tokens * GPT41_INPUT_PER_TOKEN + total_output_tokens * GPT41_OUTPUT_PER_TOKEN
             await _emit(cb, PlanningEvent(type="agent_thinking", agent=agent_name,
                                            data={"content": "Brief ready — handing off to Product Owner."}))
             await _emit(cb, PlanningEvent(type="agent_artifact", agent=agent_name,
@@ -277,7 +289,7 @@ async def _run_em(
         "The conversation has reached its limit. Output BRIEF_READY: now with "
         "the best brief you can produce from what you have."
     )
-    resp = await async_call_llm_tracked(system_prompt, force_prompt, max_tokens=400, model="mini")
+    resp = await async_call_llm_tracked(system_prompt, force_prompt, max_tokens=400, model="full", creds=getattr(state, 'creds', None))
     final = resp.text
     total_input_tokens += resp.input_tokens
     total_output_tokens += resp.output_tokens

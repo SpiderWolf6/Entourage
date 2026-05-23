@@ -119,13 +119,17 @@ function derivePhase(
 
 // ─── App root ─────────────────────────────────────────────────────────────────
 
-export default function App() {
+interface AppProps {
+  initialProjectId?: string | null
+  onBackToDashboard?: () => void
+  savedCreds?: Record<string, string>
+}
+
+export default function App({ initialProjectId, onBackToDashboard, savedCreds: propSavedCreds }: AppProps = {}) {
   const [appState, setAppState]     = useState<AppState>('idle')
   const [story, setStory]           = useState('')
   const [projectName, setProjectName] = useState('')
-  const [projectId, setProjectId]   = useState<string | null>(
-    () => new URLSearchParams(window.location.search).get('p')
-  )
+  const [projectId, setProjectId]   = useState<string | null>(initialProjectId ?? null)
   const [agentStates, setAgentStates] = useState<Record<PipelineAgent, AgentState>>(makeDefaultStates())
   const [activeAgent, setActiveAgent] = useState<PipelineAgent | null>(null)
   const [spawnedAgents, setSpawnedAgents] = useState<SpawnedAgent[]>([])
@@ -138,7 +142,13 @@ export default function App() {
   const [modal, setModal]           = useState<ModalTarget>(null)
   const [monitorOpen, setMonitorOpen] = useState(false)
   const [errorMsg, setErrorMsg]     = useState('')
-  const [creds, setCreds] = useState({ azureKey: '', azureEndpoint: '', azureDeploymentFull: '', azureApiVersion: '', anthropicKey: '' })
+  const [creds, setCreds] = useState(() => ({
+    azureKey:            propSavedCreds?.azure_openai_api_key        || '',
+    azureEndpoint:       propSavedCreds?.azure_openai_endpoint        || '',
+    azureDeploymentFull: propSavedCreds?.azure_openai_deployment_full || '',
+    azureApiVersion:     propSavedCreds?.azure_openai_api_version     || '',
+    anthropicKey:        propSavedCreds?.anthropic_api_key            || '',
+  }))
   const [totalCostUsd, setTotalCostUsd] = useState(0)
   const hrOutputRef = useRef<string>('')
 
@@ -180,24 +190,118 @@ export default function App() {
     window.history.replaceState(null, '', url.toString())
   }, [projectId])
 
-  // On mount: if URL has a project ID, fetch it and restore state
+  // On mount: if URL has a project ID, fetch it and restore full state
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get('p')
     if (!id) return
-    api.getProject(id).then(project => {
-      setProjectId(project.id)
-      setProjectName(project.name || '')
-      setStory(project.user_story || '')
-      const s = project.status
-      if (s === 'completed' || s === 'mvp_ready') setAppState('done')
-      else if (s === 'executing') { setAppState('done'); setExecRunning(true); setExecPanel(true) }
-      else if (s === 'failed' || s === 'execution_failed') setAppState('error')
-      else setAppState('running') // running, created, or unknown — show war room and let WS catch up
-    }).catch(() => {
-      // Project not found — clear stale URL param and show landing
-      window.history.replaceState(null, '', '/')
-    })
+
+    const restore = async () => {
+      try {
+        const [project, artifactsResp, execStatus] = await Promise.all([
+          api.getProject(id),
+          api.getArtifacts(id).catch(() => ({ artifacts: [] })),
+          api.getExecutionStatus(id).catch(() => null),
+        ])
+
+        setProjectId(project.id)
+        setProjectName(project.name || '')
+        setStory(project.user_story || '')
+
+        // restore planning agent states from artifacts
+        const artifacts = artifactsResp.artifacts || []
+        const agentTypeMap: Record<string, PipelineAgent> = {
+          brief: 'engineering_manager',
+          requirements: 'product_owner',
+          architecture: 'architect',
+          sprint_plan: 'project_lead',
+          team_roster: 'hr',
+        }
+        const restoredStates = makeDefaultStates()
+        for (const art of artifacts) {
+          const agent = agentTypeMap[art.artifact_type]
+          if (agent) {
+            restoredStates[agent] = {
+              status: 'done',
+              thoughts: [],
+              artifact: art.content,
+              artifactType: art.artifact_type,
+            }
+          }
+        }
+        setAgentStates(restoredStates)
+
+        // restore spawned agents from team_roster artifact
+        const rosterArt = artifacts.find(a => a.artifact_type === 'team_roster')
+        if (rosterArt) {
+          // parse spawned agents from HR output
+          const spawnedMatches = [...rosterArt.content.matchAll(/name:\s*(\w+)\narchetype:\s*(\w+)/g)]
+          const spawned: SpawnedAgent[] = spawnedMatches.map(m => ({
+            name: m[1], archetype: m[2], systemPrompt: ''
+          }))
+          if (spawned.length) setSpawnedAgents(spawned)
+        }
+
+        const s = project.status
+
+        if (s === 'mvp_ready') {
+          setAppState('done')
+          setExecPanel(true)
+          // restore execution events from sprint runs
+          if (execStatus?.sprint_runs?.length) {
+            const syntheticEvents = _buildSyntheticExecEvents(execStatus, project.status)
+            setExecEvents(syntheticEvents)
+          }
+          // restore demo URL if available
+          if (execStatus?.demo_primary_url) {
+            setDemoUrl(`${window.location.origin}/demo/${id}/`)
+          }
+        } else if (s === 'executing') {
+          setAppState('done')
+          setExecRunning(true)
+          setExecPanel(true)
+          if (execStatus?.sprint_runs?.length) {
+            const syntheticEvents = _buildSyntheticExecEvents(execStatus, project.status)
+            setExecEvents(syntheticEvents)
+          }
+        } else if (s === 'completed') {
+          // planning done, execution not started
+          setAppState('done')
+        } else if (s === 'failed') {
+          setAppState('error')
+          setErrorMsg('Planning failed — check the monitor for details.')
+        } else if (s === 'execution_failed') {
+          setAppState('done')
+          setExecPanel(true)
+          if (execStatus?.sprint_runs?.length) {
+            const syntheticEvents = _buildSyntheticExecEvents(execStatus, project.status)
+            setExecEvents(syntheticEvents)
+          }
+        } else {
+          // running/created — show war room and let WS deliver live events
+          setAppState('running')
+        }
+      } catch {
+        window.history.replaceState(null, '', '/')
+      }
+    }
+
+    restore()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // build synthetic execution events from DB sprint run records for state restoration
+  function _buildSyntheticExecEvents(execStatus: { sprint_runs: Array<{ sprint: number; status: string }> }, projectStatus?: string) {
+    const events: Array<{ type: string; data: Record<string, unknown> }> = []
+    events.push({ type: 'execution_start', data: {} })
+    for (const run of execStatus.sprint_runs) {
+      events.push({ type: 'sprint_start', data: { sprint: run.sprint } })
+      events.push({ type: 'sprint_done', data: { sprint: run.sprint, status: run.status } })
+    }
+    // push mvp_ready so isMvpReady=true and "Run Sprints" button is hidden
+    if (projectStatus === 'mvp_ready' || projectStatus === 'execution_failed') {
+      events.push({ type: 'mvp_ready', data: {} })
+    }
+    return events
+  }
 
   const { events } = useWebSocket(projectId ?? undefined)
 
@@ -331,7 +435,10 @@ export default function App() {
       if (ev.type === 'execution_start') { setExecPanel(true); setExecRunning(true) }
       if (ev.type === 'mvp_ready' || ev.type === 'all_sprints_done') setExecRunning(false)
       if (ev.type === 'execution_error') setExecRunning(false)
-      if (ev.type === 'demo_demo_ready') setDemoUrl((ev.data as Record<string,unknown>)?.primary_url as string || '')
+      if (ev.type === 'demo_demo_ready') {
+        const pid = projectId
+        if (pid) setDemoUrl(`${window.location.origin}/demo/${pid}/`)
+      }
 
       // Accumulate dev agent costs (pipeline agent costs already accumulated above)
       if (ev.type === 'agent_done') {
@@ -388,6 +495,7 @@ export default function App() {
   }, [story, projectName, appState, creds])
 
   const handleReset = useCallback(() => {
+    if (onBackToDashboard) { onBackToDashboard(); return }
     window.history.replaceState(null, '', '/')
     setAppState('idle'); setStory(''); setProjectName(''); setProjectId(null)
     setAgentStates(makeDefaultStates()); setActiveAgent(null)
@@ -417,7 +525,11 @@ export default function App() {
   const handleLaunchDemo = useCallback(async () => {
     if (!projectId) return
     setDemoLoading(true)
-    try { const status = await api.startDemo(projectId); setDemoUrl(status.primary_url || '') }
+    try {
+      await api.startDemo(projectId)
+      // don't set demoUrl here — wait for demo_demo_ready event which only fires
+      // after services actually start. if they crash/timeout, no URL is shown.
+    }
     catch (e) { alert(`Demo failed: ${e instanceof Error ? e.message : String(e)}`) }
     finally { setDemoLoading(false) }
   }, [projectId])
@@ -461,6 +573,8 @@ export default function App() {
         projectName={projectName} setProjectName={setProjectName}
         creds={creds} setCreds={setCreds}
         onSubmit={handleSubmit} loading={appState === 'submitting'}
+        onBack={onBackToDashboard}
+        hasSavedCreds={!!(propSavedCreds && Object.values(propSavedCreds).some(v => v))}
       />
     )
   }
@@ -2493,17 +2607,20 @@ function ClarificationModalPanel({ clarification, onAnswer, onClose }: {
   )
 }
 
+
+
 // ─── Landing ──────────────────────────────────────────────────────────────────
 
 type Creds = { azureKey: string; azureEndpoint: string; azureDeploymentFull: string; azureApiVersion: string; anthropicKey: string }
 
 function LandingView({
-  story, setStory, projectName, setProjectName, creds, setCreds, onSubmit, loading,
+  story, setStory, projectName, setProjectName, creds, setCreds, onSubmit, loading, onBack, hasSavedCreds,
 }: {
   story: string; setStory: (s: string) => void
   projectName: string; setProjectName: (s: string) => void
   creds: Creds; setCreds: (c: Creds) => void
   onSubmit: () => void; loading: boolean
+  onBack?: () => void; hasSavedCreds?: boolean
 }) {
   const onKey = (e: React.KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') onSubmit() }
   const set = (k: keyof Creds) => (e: React.ChangeEvent<HTMLInputElement>) => setCreds({ ...creds, [k]: e.target.value })
@@ -2514,6 +2631,9 @@ function LandingView({
   return (
     <div className="land">
       <div className="land-dots" />
+      {onBack && (
+        <button className="land-back" onClick={onBack}>← Dashboard</button>
+      )}
       <div className="land-inner">
         <div className="land-brand">
           <img src="/entourage_icon.png" alt="" className="land-logo-icon" />
@@ -2555,7 +2675,7 @@ function LandingView({
 
           <div className="land-creds">
             <p className="land-creds-label">API credentials</p>
-            <p className="land-creds-hint">Enter your API keys below — or paste your admin password into all five fields to use saved credentials.</p>
+            <p className="land-creds-hint">{hasSavedCreds ? '✓ Credentials loaded from your account — update below if needed.' : 'Enter your API keys below — or paste your admin password into all five fields to use saved credentials.'}</p>
             <div className="land-creds-grid">
               <div className="land-cred-row">
                 <label>Azure OpenAI Key</label>

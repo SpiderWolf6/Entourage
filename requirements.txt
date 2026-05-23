@@ -1,6 +1,7 @@
 # Core
 httpx
 python-dotenv
+supabase
 
 # FastAPI server
 fastapi

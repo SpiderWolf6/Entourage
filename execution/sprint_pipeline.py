@@ -79,7 +79,7 @@ class SprintExecutionPipeline:
         self.state = state
         self.sandbox = sandbox
         self.cb = callbacks or ExecutionCallbacks()
-        self._coder = ClaudeCoderAgent(sandbox.workspace_dir, project_id)
+        self._coder = ClaudeCoderAgent(sandbox.workspace_dir, project_id, creds=getattr(state, 'creds', None))
         self._gate_events: dict[str, asyncio.Event] = {}
         self._gate_approved: dict[str, bool] = {}
         self._abort = asyncio.Event()

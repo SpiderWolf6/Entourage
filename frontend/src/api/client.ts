@@ -7,9 +7,22 @@
 
 const BASE = '/api';
 
+// auth headers injected per-request from the current Supabase session
+let _userId: string | null = null
+let _userEmail: string | null = null
+
+export function setAuthHeaders(userId: string | null, email: string | null) {
+  _userId = userId
+  _userEmail = email
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const authHeaders: Record<string, string> = {}
+  if (_userId)    authHeaders['x-user-id']    = _userId
+  if (_userEmail) authHeaders['x-user-email'] = _userEmail
+
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     ...options,
   });
   if (!res.ok) {
@@ -163,6 +176,12 @@ export const api = {
 
   getDemoStatus: (id: string) =>
     request<DemoStatus>(`/projects/${id}/demo`),
+
+  // nuclear admin reset — wipes all workspaces + all DB records
+  nukeEverything: () =>
+    request<{ nuked: boolean; size_before_mb: number; size_after_bytes: number }>(
+      '/admin/nuke', { method: 'POST' }
+    ),
 
   // workspace file browser
   listWorkspaceFiles: (id: string) =>

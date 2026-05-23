@@ -199,6 +199,7 @@ def _build_reviewer_prompt(
     lines.append("- API endpoint URL mismatch between frontend fetch() call and Flask route")
     lines.append("- Missing required file that is imported by another file")
     lines.append("- requirements.txt package name wrong (e.g. 'sqlalchemy' instead of 'flask-sqlalchemy')")
+    lines.append("- api/run.py hardcodes port=9000 instead of reading from os.environ.get('PORT', 9000)")
     lines.append("")
     lines.append("Do NOT: refactor, rename, add features, improve styling, or change anything that works.")
     lines.append("Do NOT: add comments explaining what you changed.")

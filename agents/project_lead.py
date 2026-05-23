@@ -65,7 +65,7 @@ class ProjectLeadAgent(BaseAgent):
         return 8192
 
     def _model_tier(self) -> str:
-        return "mini"  # PL does planning/review, no code generation
+        return "full"
 
     async def run(
         self,

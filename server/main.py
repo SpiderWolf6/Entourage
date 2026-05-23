@@ -36,7 +36,51 @@ async def lifespan(app: FastAPI):
     # initialize sqlite tables and register agent classes on startup
     await init_db()
     discover_agents()
+
+    # start background tasks
+    from server.cache_manager import run_eviction_loop
+    eviction_task = asyncio.create_task(run_eviction_loop())
+    demo_idle_task = asyncio.create_task(_demo_idle_killer())
+
     yield
+
+    # clean shutdown
+    eviction_task.cancel()
+    demo_idle_task.cancel()
+
+
+async def _demo_idle_killer():
+    """Kill demos that have been idle for more than 30 minutes.
+
+    Frees ports and resets project status to mvp_ready so users can relaunch.
+    Runs every 5 minutes.
+    """
+    from execution.demo_launcher import get_demo, unregister_demo, DEMO_IDLE_TIMEOUT_SECS
+    from server.database import async_session
+    from server.models.project import Project
+    from sqlalchemy import select
+
+    while True:
+        await asyncio.sleep(300)  # check every 5 minutes
+        try:
+            from execution.demo_launcher import _active_demos
+            for project_id in list(_active_demos.keys()):
+                launcher = get_demo(project_id)
+                if launcher and launcher.idle_seconds() > DEMO_IDLE_TIMEOUT_SECS:
+                    log.info("Demo idle timeout for project %s — killing", project_id)
+                    await launcher.stop()
+                    unregister_demo(project_id)
+                    # reset project status so Launch button reappears
+                    async with async_session() as db:
+                        result = await db.execute(
+                            select(Project).where(Project.id == project_id)
+                        )
+                        project = result.scalar_one_or_none()
+                        if project and project.status != "mvp_ready":
+                            project.status = "mvp_ready"
+                            await db.commit()
+        except Exception as e:
+            log.warning("Demo idle killer error: %s", e)
 
 
 def create_app() -> FastAPI:
@@ -55,15 +99,17 @@ def create_app() -> FastAPI:
     )
 
 
-    from server.api.projects  import router as projects_router
-    from server.api.planning  import router as planning_router
-    from server.api.execution import router as execution_router
-    from server.api.ws        import router as ws_router
+    from server.api.projects   import router as projects_router
+    from server.api.planning   import router as planning_router
+    from server.api.execution  import router as execution_router
+    from server.api.ws         import router as ws_router
+    from server.api.demo_proxy import router as demo_proxy_router
 
     app.include_router(projects_router,  prefix="/api")
     app.include_router(planning_router,  prefix="/api")
     app.include_router(execution_router, prefix="/api")
     app.include_router(ws_router)
+    app.include_router(demo_proxy_router)
 
     @app.get("/api/health")
     async def health():
@@ -88,9 +134,9 @@ def create_app() -> FastAPI:
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; "
-            "img-src 'self' data: blob:; "
-            "connect-src 'self' ws: wss:; "
-            "frame-src 'self' http://localhost:*;"
+            "img-src 'self' data: blob: https://lh3.googleusercontent.com; "
+            "connect-src 'self' ws: wss: https://*.supabase.co https://accounts.google.com; "
+            "frame-src 'self' http://localhost:* https://accounts.google.com;"
         )
 
         @app.get("/{full_path:path}", include_in_schema=False)

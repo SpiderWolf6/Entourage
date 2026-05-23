@@ -26,8 +26,7 @@ class HRAgent(BaseAgent):
     skills = ["team-composition", "agent-spawning", "role-definition"]
 
     def _model_tier(self) -> str:
-        # mini handles structured template output well enough; no reasoning needed
-        return "mini"
+        return "full"
 
     def build_prompt(self, task: dict[str, Any], context: str) -> str:
         sprint_plan = task.get("sprint_plan", "")

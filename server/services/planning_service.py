@@ -24,7 +24,8 @@ from orchestrator.planning_pipeline import (
 
 
 async def run_planning(project_id: str, user_story: str,
-                       config: dict | None = None) -> PlanningResult:
+                       config: dict | None = None,
+                       creds=None) -> PlanningResult:
     """Run the planning pipeline with DB + EventBus integration."""
     import logging
     log = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ async def run_planning(project_id: str, user_story: str,
             data={"agent": pe.agent, **pe.data},
         ))
 
-        # Save artifacts to DB when produced
+        # Save artifacts to SQLite cache when produced
         if pe.type == "agent_artifact":
             await _save_artifact(
                 project_id=project_id,
@@ -60,6 +61,21 @@ async def run_planning(project_id: str, user_story: str,
                 content=pe.data.get("content", ""),
                 tokens_used=pe.data.get("tokens_used", 0),
             )
+            # also write to Supabase immediately (source of truth)
+            try:
+                from server import supabase_store
+                await supabase_store.save_artifact({
+                    "project_id":    project_id,
+                    "agent":         pe.agent,
+                    "artifact_type": pe.data.get("artifact_type", "unknown"),
+                    "title":         f"{pe.agent} — {pe.data.get('artifact_type', '')}",
+                    "content":       pe.data.get("content", ""),
+                    "tokens_used":   pe.data.get("tokens_used", 0),
+                    "cost":          0.0,
+                })
+            except Exception as sb_err:
+                import logging
+                logging.getLogger(__name__).warning("Supabase artifact save failed: %s", sb_err)
 
     callbacks = PlanningCallbacks(on_event=on_event)
 
@@ -69,6 +85,7 @@ async def run_planning(project_id: str, user_story: str,
             user_story=user_story,
             callbacks=callbacks,
             config=config,
+            creds=creds,
         )
 
         # Update project status to completed and save stack

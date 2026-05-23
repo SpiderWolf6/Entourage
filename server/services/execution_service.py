@@ -47,7 +47,7 @@ _execution_tasks: dict[str, asyncio.Task] = {}
 
 # ── Start execution ────────────────────────────────────────────────────────────
 
-async def start_execution(project_id: str) -> dict:
+async def start_execution(project_id: str, user_id: str | None = None) -> dict:
     """Start sprint-by-sprint execution for a project.
 
     Requires: the planning pipeline (EM→PO→Arch→PL→HR) must be completed first.
@@ -75,6 +75,7 @@ async def start_execution(project_id: str) -> dict:
 
         stack = config.get("resolved_stack", "flask_react")
         user_story = project.user_story
+        stored_user_id = config.get("user_id") or user_id
 
     # Reconstruct PipelineState from DB artifacts
     state = await _rebuild_state(project_id, user_story, stack)
@@ -110,9 +111,29 @@ async def start_execution(project_id: str) -> dict:
     )
     register_pipeline(project_id, pipeline)
 
+    # Load credentials from Supabase for this user
+    creds = None
+    try:
+        if stored_user_id:
+            from server.supabase_store import get_user_saved_creds
+            from server.credentials import Credentials
+            saved = await get_user_saved_creds(stored_user_id)
+            if saved:
+                creds = Credentials.from_dict(saved)
+        if creds is None:
+            # fall back to env (admin path)
+            from server.credentials import Credentials
+            creds = Credentials.from_env()
+    except Exception as e:
+        log.warning("Could not load credentials for execution: %s", e)
+
+    # touch cache activity
+    from server.cache_manager import touch
+    touch(project_id)
+
     # Launch as background task
     task = asyncio.create_task(
-        _run_execution_safe(project_id, pipeline, state, sandbox, stack, config)
+        _run_execution_safe(project_id, pipeline, state, sandbox, stack, config, creds)
     )
     _execution_tasks[project_id] = task
 
@@ -126,10 +147,17 @@ async def _run_execution_safe(
     sandbox: SandboxManager,
     stack: str,
     config: dict,
+    creds=None,  # server.credentials.Credentials — passed through, not stored
 ) -> None:
-    """Run the execution pipeline with error handling."""
-    from server.api.planning import _apply_credentials
-    _restore = _apply_credentials(config.get("credentials", {}))
+    """Run the execution pipeline with error handling.
+
+    Credentials are passed explicitly through the stack — no os.environ patching.
+    The claude coder reads ANTHROPIC_API_KEY from the environment directly
+    (claude CLI needs it as an env var), so we set it only for the subprocess env.
+    """
+    # pass creds to pipeline state so sprint pipeline can forward to claude coder
+    if creds and state:
+        state.creds = creds
     try:
         results = await pipeline.run()
 

@@ -1,11 +1,11 @@
-"""azure openai provider — calls the azure openai REST api for all planning agents.
+"""azure openai provider — calls the gpt-4.1 REST api for all planning agents.
 
-retry logic covers the three most common transient failures:
+retry logic:
   - 429 rate limit: exponential backoff up to 90s
-  - 400 content filter: retry with the same payload (filter trips are usually transient)
+  - 400 content filter: retry (filter trips are usually transient)
   - 5xx server errors: retry with backoff
 
-requires three env vars: AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT_FULL.
+requires: VITE_SUPABASE_URL (or AZURE_OPENAI_API_KEY), AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT_FULL.
 """
 
 import asyncio
@@ -34,11 +34,12 @@ class AzureOpenAIProvider(LLMProvider):
     keep the dependency list small. headers use api-key auth (not Bearer tokens).
     """
 
-    def __init__(self):
-        self.api_key = os.getenv("AZURE_OPENAI_API_KEY", "").strip()
-        base = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip().rstrip("/")
-        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "").strip()
-        deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT_FULL", "").strip()
+    def __init__(self, api_key: str = "", endpoint: str = "", deployment: str = "", api_version: str = ""):
+        # accept explicit credentials — fall back to env only if not provided (admin path)
+        self.api_key = (api_key or os.getenv("AZURE_OPENAI_API_KEY", "")).strip()
+        base = (endpoint or os.getenv("AZURE_OPENAI_ENDPOINT", "")).strip().rstrip("/")
+        api_version = (api_version or os.getenv("AZURE_OPENAI_API_VERSION", "")).strip()
+        deployment = (deployment or os.getenv("AZURE_OPENAI_DEPLOYMENT_FULL", "")).strip()
 
         def _build_url(base_url: str, dep: str, version: str) -> str:
             # if the base already contains a deployment path, just append the api-version

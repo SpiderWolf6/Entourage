@@ -22,8 +22,7 @@ class EngineeringManagerAgent(BaseAgent):
     skills = ["requirements-gathering", "scope-definition", "stakeholder-alignment"]
 
     def _model_tier(self) -> str:
-        # mini is fast enough for the clarification conversation; saves cost
-        return "mini"
+        return "full"
 
     def build_prompt(self, task: dict[str, Any], context: str) -> str:
         conversation = task.get("conversation", "")

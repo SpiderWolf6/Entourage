@@ -1,74 +1,87 @@
-"""llm client — thin routing layer over the active provider.
+"""llm client — routes calls to the Azure OpenAI provider.
 
-all agent llm calls go through async_call_llm_tracked() or async_stream_llm().
-the provider singleton is created lazily so credential patching (done in
-planning.py _apply_credentials) takes effect before the first real call.
+Credentials are passed explicitly per-call rather than read from os.environ.
+This eliminates the env-patching race condition when multiple users run
+pipelines in parallel.
+
+The provider is instantiated per-call with the given credentials — no singleton.
+For the admin path (use_env_creds), credentials are read from os.environ directly.
 """
 
 import asyncio
-import os
+from typing import TYPE_CHECKING
 
-from dotenv import load_dotenv
+if TYPE_CHECKING:
+    from server.credentials import Credentials
 
-from llm.base_provider import LLMProvider, LLMResponse
+from llm.base_provider import LLMResponse
 from llm.azure_openai import AzureOpenAIProvider
 
-# load .env from project root so local dev works without export AZURE_OPENAI_API_KEY=...
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-# module-level singleton — reset to None whenever credentials change
-_provider: LLMProvider | None = None
-
-
-def get_provider() -> LLMProvider:
-    """return the active provider, creating it on first call.
-
-    lazy init is intentional: _apply_credentials() patches os.environ before
-    the pipeline runs, so the provider is always created with the right keys.
-    """
-    global _provider
-    if _provider is None:
-        _provider = AzureOpenAIProvider()
-    return _provider
+def _make_provider(creds: "Credentials | None") -> AzureOpenAIProvider:
+    """Create a provider from explicit credentials or fall back to env (admin path)."""
+    if creds is None:
+        # admin path — read from os.environ
+        return AzureOpenAIProvider()
+    return AzureOpenAIProvider(
+        api_key    = creds.azure_openai_api_key,
+        endpoint   = creds.azure_openai_endpoint,
+        deployment = creds.azure_openai_deployment_full,
+        api_version= creds.azure_openai_api_version,
+    )
 
 
-def reset_provider() -> None:
-    """force a fresh provider on the next call — used after credential changes."""
-    global _provider
-    _provider = None
+# ── async interface ───────────────────────────────────────────────────────────
 
-
-def set_provider(provider: LLMProvider) -> None:
-    """override the active provider (testing / alternate backends)."""
-    global _provider
-    _provider = provider
-
-
-# ── async interface (used by all agents) ──────────────────────────────────────
-
-async def async_call_llm(system_prompt: str, user_prompt: str,
-                         max_tokens: int = 4096, model: str = "full") -> str:
+async def async_call_llm(
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int = 4096,
+    model: str = "full",
+    creds: "Credentials | None" = None,
+) -> str:
     """async llm call — returns text only."""
-    resp = await get_provider().call(system_prompt, user_prompt, max_tokens, model=model)
+    provider = _make_provider(creds)
+    resp = await provider.call(system_prompt, user_prompt, max_tokens, model=model)
     return resp.text
 
 
-async def async_call_llm_tracked(system_prompt: str, user_prompt: str,
-                                  max_tokens: int = 4096, model: str = "full") -> LLMResponse:
-    """async llm call — returns full LLMResponse with token counts and cost."""
-    return await get_provider().call(system_prompt, user_prompt, max_tokens, model=model)
+async def async_call_llm_tracked(
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int = 4096,
+    model: str = "full",
+    creds: "Credentials | None" = None,
+) -> LLMResponse:
+    """async llm call — returns full LLMResponse with token counts."""
+    provider = _make_provider(creds)
+    return await provider.call(system_prompt, user_prompt, max_tokens, model=model)
 
 
-async def async_stream_llm(system_prompt: str, user_prompt: str,
-                            max_tokens: int = 4096, model: str = "full"):
+async def async_stream_llm(
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int = 4096,
+    model: str = "full",
+    creds: "Credentials | None" = None,
+):
     """async streaming call — yields text chunks."""
-    async for chunk in get_provider().stream(system_prompt, user_prompt, max_tokens, model=model):
+    provider = _make_provider(creds)
+    async for chunk in provider.stream(system_prompt, user_prompt, max_tokens, model=model):
         yield chunk
 
 
 # ── sync interface (kept for scripts / one-off calls) ─────────────────────────
 
 def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 4096,
-             model: str = "full") -> str:
+             model: str = "full", creds: "Credentials | None" = None) -> str:
     """synchronous wrapper — spins up a new event loop. don't use inside async code."""
-    return asyncio.run(async_call_llm(system_prompt, user_prompt, max_tokens, model=model))
+    return asyncio.run(async_call_llm(system_prompt, user_prompt, max_tokens, model=model, creds=creds))
+
+
+# keep these for backwards compat with any code that imported the old singleton pattern
+def reset_provider() -> None:
+    pass  # no-op — no singleton anymore
+
+def set_provider(provider) -> None:
+    pass  # no-op — provider is created per-call

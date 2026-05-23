@@ -73,9 +73,10 @@ class ClaudeCoderAgent:
         result = await agent.run(task, on_event=my_callback)
     """
 
-    def __init__(self, workspace_dir: Path, project_id: str):
+    def __init__(self, workspace_dir: Path, project_id: str, creds=None):
         self.workspace_dir = workspace_dir
         self.project_id = project_id
+        self.creds = creds  # Credentials — used to inject ANTHROPIC_API_KEY into subprocess env
         self._claude_bin = _find_claude_binary()
 
     async def run(
@@ -202,7 +203,7 @@ class ClaudeCoderAgent:
                 input=prompt_bytes,
                 capture_output=True,
                 cwd=str(self.workspace_dir),
-                env=_build_env(self.workspace_dir),
+                env=_build_env(self.workspace_dir, self.creds),
                 timeout=CLAUDE_TIMEOUT,
             )
             return {
@@ -392,8 +393,10 @@ def _write_claude_md(workspace_dir: Path) -> None:
         "  from api.app import create_app\n"
         "  app = create_app()\n"
         "  if __name__ == '__main__':\n"
-        "      app.run(host='0.0.0.0', port=9000, debug=False)\n"
+        "      port = int(os.environ.get('PORT', 9000))\n"
+        "      app.run(host='0.0.0.0', port=port, debug=False)\n"
         "  ```\n"
+        "  CRITICAL: Always read port from os.environ.get('PORT', 9000) — NEVER hardcode port=9000.\n"
         "  NEVER use debug=True — the Werkzeug reloader forks a second process which breaks the demo launcher.\n"
         "  Without the sys.path.insert, `from api.app import create_app` raises ModuleNotFoundError at launch.\n"
         "- Complete all assigned files in one pass. Do not ask clarifying questions.\n"
@@ -431,13 +434,18 @@ def _snapshot_workspace(workspace_dir: Path) -> dict[str, str]:
     return snap
 
 
-def _build_env(workspace_dir: Path) -> dict[str, str]:
-    """Build environment variables for the claude subprocess."""
+def _build_env(workspace_dir: Path, creds=None) -> dict[str, str]:
+    """Build environment variables for the claude subprocess.
+
+    The claude CLI reads ANTHROPIC_API_KEY from the environment — we inject
+    it from the Credentials object so we never rely on os.environ being patched.
+    """
     env = os.environ.copy()
-    # Ensure claude can find npm, python etc.
     env["CLAUDE_WORKSPACE"] = str(workspace_dir)
-    # Disable telemetry / auto-update noise
     env["CLAUDE_DISABLE_AUTOUPDATE"] = "1"
+    # inject anthropic key from credentials if provided
+    if creds and hasattr(creds, 'anthropic_api_key') and creds.anthropic_api_key:
+        env["ANTHROPIC_API_KEY"] = creds.anthropic_api_key
     return env
 
 

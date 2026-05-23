@@ -39,8 +39,13 @@ RUN npm install -g @anthropic-ai/claude-code --unsafe-perm
 COPY . .
 
 # build the react frontend so fastapi can serve it as static files.
-# this runs inside the container so the build is reproducible regardless of the
-# developer's local node version.
+# VITE_ env vars must be present at build time (they're inlined by vite).
+# pass them via docker build args → set as build secrets on fly.io.
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+
 RUN cd frontend && npm install && npm run build
 
 # create a non-root user — claude code refuses --dangerously-skip-permissions as root

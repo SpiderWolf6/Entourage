@@ -8,6 +8,9 @@ primary_region = 'iad'
 
 [build]
   dockerfile = 'Dockerfile'
+  [build.args]
+    VITE_SUPABASE_URL      = "https://wisfuxgwtboitorhdrof.supabase.co"
+    VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indpc2Z1eGd3dGJvaXRvcmhkcm9mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMjE4MzYsImV4cCI6MjA5NDY5NzgzNn0.JNSlHp1Y5CJly5DDabbVmZNiYGFEmabaWjuU0Yr4RlY"
 
 [env]
   DATABASE_URL = 'sqlite+aiosqlite:////data/entourage.db'

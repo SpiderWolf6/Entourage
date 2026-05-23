@@ -79,6 +79,7 @@ class BaseAgent:
             self.system_prompt, prompt,
             max_tokens=self._max_tokens(),
             model=self._model_tier(),
+            creds=getattr(state, 'creds', None),
         )
         raw_response = resp.text
         self.last_input_tokens = resp.input_tokens
@@ -162,8 +163,7 @@ class BaseAgent:
     def _model_tier(self) -> str:
         """Override in subclasses to use a cheaper model.
 
-        Returns "full" for GPT-4.1, "mini" for GPT-4.1-mini.
-        Default: "full" — dev agents need the best model for code generation.
+        Default: "full" — all agents use GPT-4.1.
         """
         return "full"
 

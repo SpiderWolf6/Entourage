@@ -450,10 +450,9 @@ def _write_vite_scaffold(workspace_dir: Path, _stack: str = "flask_react") -> No
             '    },\n'
             '  },\n'
             '  server: {\n'
-            '    port: 9001,\n'
-            '    strictPort: true,\n'
+            '    strictPort: false,\n'
             '    proxy: {\n'
-            '      "/api": "http://localhost:9000",\n'
+            '      "/api": { target: `http://localhost:${process.env.BACKEND_PORT || 9000}`, changeOrigin: true },\n'
             '    },\n'
             '  },\n'
             '});\n',
