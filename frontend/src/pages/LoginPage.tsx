@@ -1,13 +1,11 @@
-// login page — google OAuth + magic link (email) sign-in via supabase
+// login page — google OAuth sign-in via supabase
 
 import React, { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
 export default function LoginPage() {
-  const [email, setEmail]       = useState('')
-  const [sent, setSent]         = useState(false)
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState('')
 
   const signInWithGoogle = async () => {
     setLoading(true)
@@ -16,19 +14,6 @@ export default function LoginPage() {
       options: { redirectTo: window.location.origin },
     })
     if (error) { setError(error.message); setLoading(false) }
-  }
-
-  const signInWithEmail = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!email.trim()) return
-    setLoading(true)
-    setError('')
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: { emailRedirectTo: window.location.origin },
-    })
-    if (error) { setError(error.message); setLoading(false) }
-    else { setSent(true); setLoading(false) }
   }
 
   return (
@@ -40,38 +25,12 @@ export default function LoginPage() {
         </div>
         <p className="login-tagline">AI-native multi-agent SDLC pipeline</p>
 
-        {sent ? (
-          <div className="login-sent">
-            <div className="login-sent-icon">✉</div>
-            <p>Check your email — we sent a magic link to <strong>{email}</strong></p>
-            <button className="login-back" onClick={() => setSent(false)}>Use a different email</button>
-          </div>
-        ) : (
-          <>
-            <button className="login-google" onClick={signInWithGoogle} disabled={loading}>
-              <GoogleIcon />
-              Continue with Google
-            </button>
+        <button className="login-google" onClick={signInWithGoogle} disabled={loading}>
+          <GoogleIcon />
+          Continue with Google
+        </button>
 
-            <div className="login-divider"><span>or</span></div>
-
-            <form onSubmit={signInWithEmail} className="login-email-form">
-              <input
-                type="email"
-                placeholder="your@email.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="login-email-input"
-                autoFocus
-              />
-              <button type="submit" className="login-email-btn" disabled={loading || !email.trim()}>
-                {loading ? <span className="spin" /> : 'Send magic link'}
-              </button>
-            </form>
-
-            {error && <p className="login-error">{error}</p>}
-          </>
-        )}
+        {error && <p className="login-error">{error}</p>}
       </div>
     </div>
   )
